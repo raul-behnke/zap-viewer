@@ -47,8 +47,9 @@ ZAP_HOME="$HOME/zap-$SLUG-viewer"
 ```
 
 Se o agente já está dentro de um clone deste repositório, copie-o para
-`ZAP_HOME` com `git clone <pasta atual> "$ZAP_HOME"`. Senão, clone a URL de
-onde este arquivo veio. Se `ZAP_HOME` já existir, pergunte antes de mexer.
+`ZAP_HOME` com `git clone <pasta atual> "$ZAP_HOME"`. Senão, rode
+`git clone https://github.com/raul-behnke/zap-viewer.git "$ZAP_HOME"`. Se
+`ZAP_HOME` já existir, pergunte antes de mexer.
 
 ## 4. Porta
 
@@ -114,10 +115,17 @@ curl -sS --fail-with-body -X POST -H "X-API-Key: $API_KEY" \
   "http://localhost:$ZAP_PORT/api/session/start"
 ```
 
-Abra `http://localhost:$ZAP_PORT/pair` no navegador do dono (`open` no macOS,
-`xdg-open` no Linux). A página pede a API key: mande o dono copiá-la com
-`grep ^API_KEY= "$ZAP_HOME/.env" | cut -d= -f2 | pbcopy` (ou `xclip` no
-Linux), colar e escanear o QR em WhatsApp, Aparelhos conectados.
+Abra a página de pareamento já autenticada. A chave vai depois do `#`, que
+o navegador não envia ao servidor nem grava em log; a página a guarda e limpa
+o endereço:
+
+```bash
+set -a; . ./.env; set +a
+open "http://localhost:$ZAP_PORT/pair#key=$API_KEY"   # Linux: xdg-open
+```
+
+Peça ao dono para escanear o código em WhatsApp, Aparelhos conectados. A
+página troca o código sozinha e mostra "Conectado" quando terminar.
 
 Confira até o status ficar `WORKING`:
 
@@ -125,7 +133,6 @@ Confira até o status ficar `WORKING`:
 curl -sS -H "X-API-Key: $API_KEY" "http://localhost:$ZAP_PORT/api/session/status" | jq -r .status
 ```
 
-O QR expira em cerca de um minuto; se expirar, recarregue a página.
 
 ## 8. Credenciais da skill
 

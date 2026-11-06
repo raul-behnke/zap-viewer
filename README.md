@@ -17,7 +17,7 @@ em `http://localhost:8000`.
 Abra o Claude Code ou o Codex e cole:
 
 ```text
-Leia https://github.com/SEU_USUARIO/zap-viewer/blob/main/INSTALL.md e siga as
+Leia https://raw.githubusercontent.com/raul-behnke/zap-viewer/main/INSTALL.md e siga as
 instruções para instalar o zap-viewer para mim. Meu nome é <SEU NOME>.
 ```
 
