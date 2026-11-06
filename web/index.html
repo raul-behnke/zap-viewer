@@ -1,0 +1,862 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zap viewer</title>
+<style>
+  /* ---- tokens ------------------------------------------------------ */
+  :root {
+    /* Restrained: tinted neutrals + one accent held under 10% of surface.
+       Accent is ochre — deliberately not green (WhatsApp) and not the
+       SaaS-template violet. It marks selection, focus and search hits only. */
+    --accent:      oklch(0.62 0.13 70);
+    --accent-ink:  oklch(0.99 0 0);
+    --accent-weak: oklch(0.62 0.13 70 / 0.12);
+
+    --bg:      oklch(0.99 0 0);
+    --panel:   oklch(0.965 0.003 70);
+    --sunken:  oklch(0.945 0.004 70);
+    --line:    oklch(0.89 0.004 70);
+    --line-soft: oklch(0.93 0.003 70);
+
+    --ink:     oklch(0.24 0.008 70);
+    --ink-2:   oklch(0.40 0.008 70);
+    --ink-3:   oklch(0.50 0.008 70);   /* 4.5:1 floor on --bg */
+
+    --mine:    oklch(0.955 0.018 70);
+    --danger:  oklch(0.50 0.16 25);
+    --ok:      oklch(0.50 0.12 150);
+
+    --r: 6px;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+    /* fixed rem scale, ratio ~1.15 — product UI, not fluid */
+    --t-xs: 0.6875rem;
+    --t-sm: 0.8125rem;
+    --t-md: 0.875rem;
+    --t-lg: 1rem;
+    --t-xl: 1.25rem;
+
+    --z-sticky: 10;
+    --z-overlay: 30;
+    --z-dialog: 40;
+
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --accent:      oklch(0.74 0.13 72);
+      --accent-ink:  oklch(0.18 0.01 70);
+      --accent-weak: oklch(0.74 0.13 72 / 0.16);
+
+      --bg:      oklch(0.185 0.006 70);
+      --panel:   oklch(0.215 0.007 70);
+      --sunken:  oklch(0.16 0.006 70);
+      --line:    oklch(0.30 0.008 70);
+      --line-soft: oklch(0.26 0.007 70);
+
+      --ink:     oklch(0.95 0.004 70);
+      --ink-2:   oklch(0.80 0.006 70);
+      --ink-3:   oklch(0.68 0.008 70);
+
+      --mine:    oklch(0.27 0.02 72);
+      --danger:  oklch(0.70 0.15 25);
+      --ok:      oklch(0.75 0.13 150);
+    }
+  }
+  :root[data-theme="dark"] {
+    --accent: oklch(0.74 0.13 72); --accent-ink: oklch(0.18 0.01 70);
+    --accent-weak: oklch(0.74 0.13 72 / 0.16);
+    --bg: oklch(0.185 0.006 70); --panel: oklch(0.215 0.007 70);
+    --sunken: oklch(0.16 0.006 70); --line: oklch(0.30 0.008 70);
+    --line-soft: oklch(0.26 0.007 70);
+    --ink: oklch(0.95 0.004 70); --ink-2: oklch(0.80 0.006 70);
+    --ink-3: oklch(0.68 0.008 70); --mine: oklch(0.27 0.02 72);
+    --danger: oklch(0.70 0.15 25); --ok: oklch(0.75 0.13 150);
+  }
+
+  /* ---- base -------------------------------------------------------- */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: var(--t-md)/1.5 var(--sans);
+    -webkit-font-smoothing: antialiased;
+    display: grid; grid-template-columns: 232px 1fr; height: 100vh; overflow: hidden;
+  }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  ::placeholder { color: var(--ink-3); opacity: 1; }
+
+  /* ---- rail -------------------------------------------------------- */
+  #rail {
+    background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .brand { padding: 14px 16px 10px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand small { display: block; font: var(--t-xs)/1.4 var(--mono); color: var(--ink-3);
+                 font-weight: 400; letter-spacing: 0; margin-top: 2px; }
+  nav { padding: 4px 8px; display: flex; flex-direction: column; gap: 1px; }
+  nav button {
+    text-align: left; padding: 7px 10px; border-radius: var(--r);
+    color: var(--ink-2); display: flex; justify-content: space-between; align-items: baseline;
+    transition: background 160ms var(--ease), color 160ms var(--ease);
+  }
+  nav button:hover { background: var(--sunken); color: var(--ink); }
+  nav button[aria-current="true"] { background: var(--accent-weak); color: var(--ink); font-weight: 600; }
+  nav .n { font: var(--t-xs) var(--mono); color: var(--ink-3); }
+
+  #state {
+    margin-top: auto; padding: 12px 16px 14px; border-top: 1px solid var(--line-soft);
+    font: var(--t-xs)/1.7 var(--mono); color: var(--ink-3);
+  }
+  #state div { display: flex; justify-content: space-between; gap: 8px; }
+  #state b { font-weight: 600; color: var(--ink-2); }
+  #state .warn { color: var(--danger); }
+  #state .good { color: var(--ok); }
+  .railbtns { display: flex; gap: 6px; padding: 0 16px 12px; }
+  .railbtns button {
+    font: var(--t-xs) var(--sans); color: var(--ink-3); padding: 3px 7px;
+    border: 1px solid var(--line); border-radius: var(--r);
+  }
+  .railbtns button:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  /* ---- main -------------------------------------------------------- */
+  main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .topbar {
+    height: 46px; flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--bg);
+  }
+  .topbar h1 { font-size: var(--t-md); font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .topbar .sub { color: var(--ink-3); font: var(--t-xs) var(--mono); }
+  .searchcue {
+    margin-left: auto; display: flex; align-items: center; gap: 6px;
+    color: var(--ink-3); font-size: var(--t-sm); padding: 4px 9px;
+    border: 1px solid var(--line); border-radius: var(--r);
+  }
+  .searchcue:hover { color: var(--ink); border-color: var(--ink-3); }
+  kbd {
+    font: var(--t-xs) var(--mono); border: 1px solid var(--line);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; color: var(--ink-3);
+  }
+  #banner {
+    flex: none; display: none; align-items: center; gap: 10px; padding: 8px 16px;
+    background: var(--accent-weak); border-bottom: 1px solid var(--line);
+    font-size: var(--t-sm);
+  }
+  #banner a { color: var(--ink); font-weight: 600; }
+
+  .view { flex: 1; min-height: 0; display: none; }
+  .view[data-on] { display: flex; }
+
+  /* ---- digest ------------------------------------------------------ */
+  #digest { overflow-y: auto; }
+  .reading { max-width: 68ch; margin: 0 auto; padding: 26px 24px 64px; width: 100%; }
+  .dig {
+    padding: 16px 0; border-bottom: 1px solid var(--line-soft); cursor: pointer;
+  }
+  .dig:hover .dig-h { color: var(--accent); }
+  .dig-h { font-weight: 600; font-size: var(--t-lg); letter-spacing: -0.01em;
+           text-wrap: balance; transition: color 140ms var(--ease); }
+  .dig-m { font: var(--t-xs) var(--mono); color: var(--ink-3); margin: 3px 0 7px;
+           display: flex; gap: 10px; flex-wrap: wrap; }
+  .dig-s { color: var(--ink-2); text-wrap: pretty; }
+  .pending { color: var(--accent); font-weight: 600; }
+
+  /* ---- archive ----------------------------------------------------- */
+  #archive { display: none; }
+  #archive[data-on] { display: grid; grid-template-columns: 316px 1fr; min-height: 0; }
+  #list { border-right: 1px solid var(--line); overflow-y: auto; background: var(--panel); }
+  .row {
+    padding: 9px 14px; border-bottom: 1px solid var(--line-soft); cursor: pointer;
+    display: grid; grid-template-columns: 1fr auto; gap: 2px 8px;
+  }
+  .row:hover { background: var(--sunken); }
+  .row[aria-selected="true"] { background: var(--accent-weak); }
+  .row-n { font-weight: 600; font-size: var(--t-sm); overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+  .row-t { font: var(--t-xs) var(--mono); color: var(--ink-3); }
+  .row-p { grid-column: 1 / -1; font-size: var(--t-xs); color: var(--ink-3);
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row-p.none { font-style: italic; }
+  .tag { font: var(--t-xs) var(--mono); color: var(--accent); }
+
+  /* min-height:0 is load-bearing: without it this grid item sizes to its
+     content, #msgs never overflows, and the thread cannot scroll at all. */
+  #thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  #msgs { flex: 1; overflow-y: auto; padding: 18px 20px 8px; display: flex;
+          flex-direction: column; gap: 3px; }
+  .m { max-width: 62ch; padding: 6px 11px; border-radius: var(--r);
+       background: var(--panel); border: 1px solid var(--line-soft);
+       animation: in 200ms var(--ease); }
+  .m.me { margin-left: auto; background: var(--mine); }
+  .m-b { white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+  .m-t { font: var(--t-xs) var(--mono); color: var(--ink-3); margin-top: 2px; }
+  .m-who { font: var(--t-xs) var(--mono); color: var(--ink-3); margin-bottom: 1px; }
+  .m.gone .m-b, .m.revoked .m-b { color: var(--ink-3); font-style: italic; }
+  .m a { color: var(--accent); }
+  .media { margin-top: 4px; }
+  .media img { max-width: min(340px, 100%); max-height: 340px; border-radius: var(--r);
+               display: block; cursor: zoom-in; background: var(--sunken); }
+  .media video { max-width: min(340px, 100%); border-radius: var(--r); display: block;
+                 background: oklch(0 0 0); }
+  .media audio { width: min(280px, 100%); height: 34px; display: block; }
+  .media .file { display: inline-block; padding: 5px 9px; border: 1px solid var(--line);
+                 border-radius: var(--r); color: var(--accent); text-decoration: none;
+                 font-size: var(--t-sm); overflow-wrap: anywhere; }
+  .media .file:hover { border-color: var(--accent); }
+  .mstate { display: block; font-size: var(--t-xs); color: var(--ink-3); font-style: italic; }
+
+  @keyframes in { from { opacity: 0; transform: translateY(3px); } }
+  .m.flash { animation: flash 1.6s var(--ease); }
+  @keyframes flash { 0%, 40% { background: var(--accent-weak);
+    box-shadow: 0 0 0 2px var(--accent); } }
+
+  #compose { flex: none; display: flex; gap: 8px; padding: 10px 20px 14px;
+             border-top: 1px solid var(--line); }
+  #compose input[type=text] {
+    flex: 1; padding: 8px 11px; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--bg); color: var(--ink); font: inherit;
+  }
+  #compose input[type=text]:focus { border-color: var(--accent); outline: none; }
+  #compose button, .btn {
+    padding: 8px 13px; border: 1px solid var(--line); border-radius: var(--r);
+    color: var(--ink-2);
+  }
+  #compose button:hover, .btn:hover { border-color: var(--ink-3); color: var(--ink); }
+
+  /* ---- search overlay ---------------------------------------------- */
+  #ov {
+    position: fixed; inset: 0; z-index: var(--z-overlay); display: none;
+    background: oklch(0 0 0 / 0.32); padding: 9vh 16px 16px;
+  }
+  #ov[data-on] { display: block; animation: fade 140ms var(--ease); }
+  @keyframes fade { from { opacity: 0; } }
+  .panel {
+    max-width: 780px; margin: 0 auto; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; box-shadow: 0 18px 50px oklch(0 0 0 / 0.28);
+    display: flex; flex-direction: column; max-height: 76vh; overflow: hidden;
+  }
+  #q { padding: 15px 18px; border: 0; border-bottom: 1px solid var(--line);
+       background: none; color: var(--ink); font: var(--t-xl) var(--sans); }
+  #q:focus { outline: none; }
+  #hits { overflow-y: auto; }
+  .hit { padding: 10px 18px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+  .hit:hover, .hit[aria-selected="true"] { background: var(--sunken); }
+  .hit-m { font: var(--t-xs) var(--mono); color: var(--ink-3); display: flex; gap: 10px; }
+  .hit-b { margin-top: 2px; overflow-wrap: anywhere; }
+  mark { background: var(--accent-weak); color: inherit; font-weight: 600;
+         padding: 0 1px; border-radius: 2px; }
+  .foot { padding: 8px 18px; border-top: 1px solid var(--line);
+          font: var(--t-xs) var(--mono); color: var(--ink-3); display: flex; gap: 14px; }
+
+  /* ---- shared ------------------------------------------------------ */
+  .empty { padding: 40px 24px; color: var(--ink-3); text-align: center;
+           font-size: var(--t-sm); max-width: 46ch; margin: 0 auto; text-wrap: pretty; }
+  .skel { height: 13px; background: var(--sunken); border-radius: 3px;
+          animation: pulse 1.4s var(--ease) infinite; }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+  }
+  @media (max-width: 860px) {
+    body { grid-template-columns: 1fr; }
+    #rail { display: none; }
+    #archive[data-on] { grid-template-columns: 1fr; }
+    #list { display: none; }
+    body.on-list #list { display: block; }
+    body.on-list #thread { display: none; }
+  }
+</style>
+
+<div id="rail">
+  <div class="brand">zap viewer<small id="me">—</small></div>
+  <nav>
+    <button id="nav-digest" aria-current="true">O que perdi <span class="n" id="n-dig"></span></button>
+    <button id="nav-archive">Arquivo <span class="n" id="n-arc"></span></button>
+  </nav>
+  <div id="state"></div>
+  <div class="railbtns">
+    <button id="theme">tema</button>
+    <button id="key">chave</button>
+    <button id="sync">sincronizar</button>
+  </div>
+</div>
+
+<main>
+  <div id="banner"></div>
+  <div class="topbar">
+    <h1 id="title">O que perdi</h1>
+    <span class="sub" id="subtitle"></span>
+    <button class="searchcue" id="cue">Buscar <kbd>/</kbd></button>
+  </div>
+
+  <section class="view" id="digest" data-on>
+    <div class="reading" id="dig-body"></div>
+  </section>
+
+  <section class="view" id="archive">
+    <div id="list"></div>
+    <div id="thread">
+      <div id="msgs"></div>
+      <form id="compose" hidden>
+        <input type="text" id="text" placeholder="Mensagem" autocomplete="off">
+        <input type="file" id="file" hidden>
+        <button type="button" id="attach" title="Anexar">anexar</button>
+        <button type="submit">enviar</button>
+      </form>
+    </div>
+  </section>
+</main>
+
+<div id="ov" role="dialog" aria-modal="true" aria-label="Buscar mensagens">
+  <div class="panel">
+    <input id="q" placeholder="Buscar em todas as conversas" autocomplete="off" spellcheck="false">
+    <div id="hits"></div>
+    <div class="foot"><span><kbd>↑↓</kbd> navegar</span><span><kbd>enter</kbd> abrir</span><span><kbd>esc</kbd> fechar</span></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ---- utilities ----------------------------------------------------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const DAY = 86400000;
+function when(iso) {
+  if (!iso) return "";
+  const d = new Date(iso), now = new Date();
+  const days = Math.floor((now - d) / DAY);
+  const hm = d.toTimeString().slice(0, 5);
+  if (d.toDateString() === now.toDateString()) return hm;
+  if (days < 1) return "ontem " + hm;
+  if (days < 7) return ["dom","seg","ter","qua","qui","sex","sáb"][d.getDay()] + " " + hm;
+  const dm = d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  return days < 330 ? dm : dm + "/" + String(d.getFullYear()).slice(2);
+}
+function monthYear(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("pt-BR", { month: "short", year: "numeric" });
+}
+/** A chat WhatsApp never named comes back as a raw JID. Not an error — normal. */
+function chatLabel(c) {
+  if (c.name) return c.name;
+  const id = String(c.id || c.chat_id || "");
+  const num = id.split("@")[0];
+  return /^\d{8,}$/.test(num) ? "+" + num : num || "sem nome";
+}
+
+/* ---- state --------------------------------------------------------- */
+let KEY = localStorage.getItem("apikey") || "";
+let CHAT = null, CHATS = [], HITS = [], HIT_I = -1, OVERVIEW = null;
+let OLDEST = null, HAS_MORE = true, LOADING = false;
+let searchTimer = null, es = null;
+
+function askKey() {
+  const k = prompt("API key:", KEY);
+  if (k) { KEY = k.trim(); localStorage.setItem("apikey", KEY); boot(); }
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "X-API-Key": KEY, ...(opts.headers || {}) } });
+  if (r.status === 401) { setBanner("Chave inválida.", "chave", askKey); throw new Error("401"); }
+  return r;
+}
+async function json(path) { const r = await api(path); return r.ok ? r.json() : null; }
+
+function setBanner(text, label, fn) {
+  const b = $("banner");
+  if (!text) { b.style.display = "none"; return; }
+  b.replaceChildren(document.createTextNode(text));
+  if (label) {
+    const a = document.createElement("button");
+    a.className = "btn"; a.textContent = label; a.onclick = fn;
+    b.append(a);
+  }
+  b.style.display = "flex";
+}
+
+/* ---- rail: ambient state, reported not announced -------------------- */
+async function overview() {
+  let o;
+  try { o = await json("/api/overview"); } catch { return; }
+  if (!o) return;
+  OVERVIEW = o;
+
+  const s = o.session || {}, bf = o.backfill || {}, su = o.summaries || {};
+  $("me").textContent = s.me ? "+" + String(s.me).split("@")[0] : "desconectado";
+
+  const cls = s.status === "WORKING" ? "good" : (s.status === "UNREACHABLE" ? "warn" : "warn");
+  $("state").innerHTML =
+    `<div><span>sessão</span><b class="${cls}">${esc(s.status || "?")}</b></div>` +
+    `<div><span>conversas</span><b>${bf.chats ?? 0}</b></div>` +
+    `<div><span>mensagens</span><b>${bf.messages ?? 0}</b></div>` +
+    `<div><span>até</span><b>${esc(monthYear(bf.oldest_ts))}</b></div>` +
+    `<div><span>resumos</span><b>${su.total ?? 0}</b></div>` +
+    `<div><span>a processar</span><b>${su.pending_chats ?? 0}</b></div>`;
+
+  $("n-arc").textContent = bf.chats ?? "";
+  if (s.status && s.status !== "WORKING" && s.status !== "UNREACHABLE") {
+    setBanner("Sessão " + s.status + ".", "reconectar", () => location.href = "/pair");
+  } else { setBanner(""); }
+}
+
+/* ---- digest: the entry view ----------------------------------------- */
+async function loadDigest() {
+  const body = $("dig-body");
+  body.innerHTML = `<div class="skel" style="width:40%"></div>`;
+
+  let rows;
+  try { rows = await json("/api/summaries?only_stale=true&limit=50"); }
+  catch { return; }
+
+  if (rows === null) {
+    body.innerHTML = `<p class="empty">A camada de resumo por IA ainda não está ativa.
+      Quando o worker Agno começar a processar, as conversas com novidade aparecem aqui.</p>`;
+    $("n-dig").textContent = "";
+    return;
+  }
+  $("n-dig").textContent = rows.length || "";
+
+  if (!rows.length) {
+    /* Three different absences, three different sentences. "Nada novo" is only
+       true once the summarizer has actually read something. */
+    const s = (OVERVIEW && OVERVIEW.summaries) || {};
+    body.innerHTML = s.total
+      ? `<p class="empty">Nada novo desde a última passada do resumo.</p>`
+      : s.pending_chats
+        ? `<p class="empty">Nenhuma conversa resumida ainda.
+             ${s.pending_chats} na fila para o worker Agno.</p>`
+        : `<p class="empty">Nada para resumir ainda.</p>`;
+    return;
+  }
+
+  body.replaceChildren(...rows.map(r => {
+    const el = document.createElement("article");
+    el.className = "dig";
+    el.tabIndex = 0;
+    el.innerHTML =
+      `<div class="dig-h">${esc(chatLabel(r))}</div>` +
+      `<div class="dig-m">` +
+        `<span class="pending">${r.pending_count} novas</span>` +
+        `<span>resumo de ${esc(when(r.covered_through_ts))}</span>` +
+        `<span>última ${esc(when(r.last_msg_ts))}</span>` +
+      `</div>` +
+      `<div class="dig-s">${esc(r.summary)}</div>`;
+    const open = () => { show("archive"); openChat(r.chat_id); };
+    el.addEventListener("click", open);
+    el.addEventListener("keydown", e => { if (e.key === "Enter") open(); });
+    return el;
+  }));
+}
+
+/* ---- archive -------------------------------------------------------- */
+async function loadChats() {
+  let rows;
+  try { rows = await json("/api/chats?limit=500"); } catch { return; }
+  CHATS = rows || [];
+  const list = $("list");
+
+  if (!CHATS.length) {
+    list.innerHTML = `<p class="empty">Nenhuma conversa sincronizada ainda.</p>`;
+    return;
+  }
+
+  list.replaceChildren(...CHATS.map(c => {
+    const el = document.createElement("div");
+    el.className = "row";
+    el.dataset.id = c.id;
+    el.setAttribute("role", "option");
+    el.setAttribute("aria-selected", String(c.id === CHAT));
+    const stamp = c.last_msg_ts ? when(c.last_msg_ts) : "";
+    /* No last_msg_ts means the backfill has not reached this chat — a real
+       state for 143 of them today, not an empty string. */
+    const prev = !c.last_msg_ts
+      ? `<div class="row-p none">sem mensagens sincronizadas</div>`
+      : c.preview ? `<div class="row-p">${esc(c.preview)}</div>` : "";
+    el.innerHTML =
+      `<div class="row-n">${esc(chatLabel(c))}</div>` +
+      `<div class="row-t">${esc(stamp)}</div>` + prev;
+    el.addEventListener("click", () => openChat(c.id));
+    return el;
+  }));
+}
+
+function bubble(m) {
+  const el = document.createElement("div");
+  el.className = "m" + (m.from_me ? " me" : "") + (m.revoked_at ? " revoked" : "");
+  el.dataset.mid = m.id;
+
+  const parts = [];
+  if (!m.from_me && String(m.chat_id || CHAT || "").endsWith("@g.us") && m.sender_jid)
+    parts.push(`<div class="m-who">${esc("+" + String(m.sender_jid).split("@")[0])}</div>`);
+
+  if (m.revoked_at) {
+    parts.push(`<div class="m-b">mensagem apagada</div>`);
+  } else {
+    if (m.body) parts.push(`<div class="m-b">${esc(m.body)}</div>`);
+    if (m.has_media) {
+      const dead = m.media_expires_at && new Date(m.media_expires_at) < new Date();
+      /* Three distinct facts, three distinct sentences: never archived,
+         deleted by the retention rule, or present. */
+      if (m.media_archived === false) {
+        parts.push(`<div class="mstate">mídia não arquivada — anterior ao R2</div>`);
+      } else if (dead) {
+        parts.push(`<div class="mstate">mídia expirada em ${esc(when(m.media_expires_at))}</div>`);
+      } else {
+        parts.push(`<div class="media" data-media="${esc(m.id)}" data-mime="${esc(m.media_mime || "")}"
+             data-name="${esc(m.media_name || "")}"><span class="mstate">carregando…</span></div>`);
+      }
+    }
+  }
+
+  const marks = [when(m.ts)];
+  if (m.edited_at) marks.push("editada");
+  if (m.from_me && m.ack != null) marks.push(["enviando","enviada","entregue","lida","ouvida"][m.ack] || "");
+  parts.push(`<div class="m-t">${esc(marks.filter(Boolean).join(" · "))}</div>`);
+
+  el.innerHTML = parts.join("");
+  const slot = el.querySelector(".media");
+  if (slot) mediaObserver.observe(slot);
+  return el;
+}
+
+const PAGE = 120;
+
+/** Fetch one page. The API's before_ts is strict (<), so to include a target
+    message we ask for one millisecond after it. */
+function pageUrl(id, beforeTs) {
+  const q = new URLSearchParams({ limit: String(PAGE) });
+  if (beforeTs) q.set("before_ts", beforeTs);
+  return `/api/chats/${encodeURIComponent(id)}/messages?${q}`;
+}
+
+async function openChat(id, anchorId = null, anchorTs = null) {
+  CHAT = id;
+  OLDEST = null; HAS_MORE = true; LOADING = false;
+  document.body.classList.remove("on-list");
+  for (const r of document.querySelectorAll(".row"))
+    r.setAttribute("aria-selected", String(r.dataset.id === id));
+
+  /* CHATS guarda só os 500 mais recentes, e o arquivo tem ~900. Uma busca ou um
+     card do digest abre conversa fora dessa janela, e aí o find falha: o título
+     vira "conversa" e o confirmName() cai no JID, que a guarda recusa com 409.
+     Buscar a linha que falta conserta os dois. */
+  let c = CHATS.find(x => x.id === id);
+  if (!c) {
+    try {
+      const rows = await json("/api/chats?q=" + encodeURIComponent(id) + "&limit=1");
+      if (rows && rows[0] && rows[0].id === id) { c = rows[0]; CHATS.push(c); }
+    } catch { /* título e confirm_name seguem no fallback do JID */ }
+  }
+  $("title").textContent = c ? chatLabel(c) : "conversa";
+  $("subtitle").textContent = "";
+  $("compose").hidden = false;
+
+  const box = $("msgs");
+  box.innerHTML = `<div class="skel" style="width:30%"></div>`;
+
+  /* Landing on a search hit: start the window just after that message so it is
+     in the first page, rather than at the tail of the conversation. */
+  const from = anchorTs ? new Date(new Date(anchorTs).getTime() + 1).toISOString() : null;
+
+  let msgs;
+  try { msgs = await json(pageUrl(id, from)); } catch { return; }
+
+  if (!msgs || !msgs.length) {
+    box.innerHTML = `<p class="empty">Sem mensagens sincronizadas nesta conversa.
+      O backfill ainda não chegou aqui.</p>`;
+    HAS_MORE = false;
+    return;
+  }
+
+  HAS_MORE = msgs.length === PAGE;
+  OLDEST = msgs[msgs.length - 1].ts;
+  msgs.reverse();
+  box.replaceChildren(...msgs.map(bubble));
+  updateCount();
+
+  if (anchorId) {
+    const el = box.querySelector(`[data-mid="${CSS.escape(anchorId)}"]`);
+    if (el) {
+      el.scrollIntoView({ block: "center" });
+      el.classList.add("flash");
+      setTimeout(() => el.classList.remove("flash"), 1600);
+    }
+  } else {
+    box.scrollTop = box.scrollHeight;
+  }
+}
+
+function updateCount() {
+  const n = $("msgs").querySelectorAll(".m").length;
+  $("subtitle").textContent = HAS_MORE ? `${n} carregadas` : `${n} mensagens`;
+}
+
+/** Prepend older messages, holding the reading position steady. */
+async function loadOlder() {
+  if (LOADING || !HAS_MORE || !CHAT || !OLDEST) return;
+  LOADING = true;
+  const box = $("msgs");
+  const mark = document.createElement("div");
+  mark.className = "skel"; mark.style.width = "26%"; mark.style.margin = "6px 0";
+  box.prepend(mark);
+  const anchorH = box.scrollHeight, anchorTop = box.scrollTop;
+
+  let older;
+  try { older = await json(pageUrl(CHAT, OLDEST)); }
+  catch { mark.remove(); LOADING = false; return; }
+
+  mark.remove();
+  if (!older || !older.length) { HAS_MORE = false; LOADING = false; updateCount(); return; }
+
+  HAS_MORE = older.length === PAGE;
+  OLDEST = older[older.length - 1].ts;
+  older.reverse();
+  box.prepend(...older.map(bubble));
+  box.scrollTop = box.scrollHeight - anchorH + anchorTop;
+  updateCount();
+  LOADING = false;
+}
+
+$("msgs").addEventListener("scroll", () => {
+  if ($("msgs").scrollTop < 160) loadOlder();
+});
+
+/** Media is fetched only when its bubble scrolls into view: a conversation can
+    hold hundreds of attachments and eagerly fetching them would be absurd. */
+const mediaObserver = new IntersectionObserver(entries => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    mediaObserver.unobserve(e.target);
+    hydrateMedia(e.target);
+  }
+}, { rootMargin: "300px" });
+
+function mstate(slot, text) {
+  const s = document.createElement("span");
+  s.className = "mstate"; s.textContent = text;
+  slot.replaceChildren(s);
+}
+
+async function hydrateMedia(slot) {
+  const id = slot.dataset.media;
+  const mime = slot.dataset.mime || "";
+  const name = slot.dataset.name || "arquivo";
+  let r;
+  try { r = await api(`/api/media/${encodeURIComponent(id)}`); }
+  catch { mstate(slot, "mídia indisponível"); return; }
+
+  if (r.status === 410) { mstate(slot, "mídia indisponível — não está no R2"); return; }
+  if (!r.ok) { mstate(slot, `mídia indisponível (${r.status})`); return; }
+
+  const url = URL.createObjectURL(await r.blob());
+  let el;
+  if (mime.startsWith("image/")) {
+    el = document.createElement("img");
+    el.src = url; el.alt = name; el.loading = "lazy";
+    el.addEventListener("click", () => window.open(url, "_blank", "noopener"));
+  } else if (mime.startsWith("video/")) {
+    el = document.createElement("video");
+    el.src = url; el.controls = true; el.preload = "metadata";
+  } else if (mime.startsWith("audio/")) {
+    el = document.createElement("audio");
+    el.src = url; el.controls = true; el.preload = "metadata";
+  } else {
+    el = document.createElement("a");
+    el.href = url; el.download = name; el.className = "file";
+    el.textContent = name;
+  }
+  slot.replaceChildren(el);
+}
+
+/* ---- search --------------------------------------------------------- */
+function openSearch() {
+  $("ov").setAttribute("data-on", "");
+  $("q").value = ""; $("hits").replaceChildren(); HITS = []; HIT_I = -1;
+  $("q").focus();
+}
+function closeSearch() { $("ov").removeAttribute("data-on"); }
+
+async function runSearch() {
+  const term = $("q").value.trim();
+  if (term.length < 2) { $("hits").replaceChildren(); HITS = []; return; }
+  let rows;
+  try { rows = await json(`/api/search?q=${encodeURIComponent(term)}&limit=60`); }
+  catch { return; }
+  HITS = rows || []; HIT_I = HITS.length ? 0 : -1;
+
+  if (!HITS.length) {
+    $("hits").innerHTML = `<p class="empty">Nada para “${esc(term)}” em ${CHATS.length} conversas.</p>`;
+    return;
+  }
+  $("hits").replaceChildren(...HITS.map((h, i) => {
+    const el = document.createElement("div");
+    el.className = "hit";
+    el.setAttribute("aria-selected", String(i === HIT_I));
+    /* highlight comes from ts_headline with non-HTML delimiters; escape the
+       whole string first, then re-introduce only our own <mark>. */
+    const body = esc(h.highlight || h.body || "")
+      .replace(/&lt;&lt;HL&gt;&gt;/g, "<mark>").replace(/&lt;&lt;\/HL&gt;&gt;/g, "</mark>");
+    el.innerHTML =
+      `<div class="hit-m"><span>${esc(h.chat_name || chatLabel(h))}</span>` +
+      `<span>${esc(when(h.ts))}</span></div><div class="hit-b">${body}</div>`;
+    el.addEventListener("click", () => jump(i));
+    return el;
+  }));
+}
+function moveHit(d) {
+  if (!HITS.length) return;
+  HIT_I = (HIT_I + d + HITS.length) % HITS.length;
+  const els = $("hits").children;
+  for (let i = 0; i < els.length; i++) els[i].setAttribute("aria-selected", String(i === HIT_I));
+  els[HIT_I]?.scrollIntoView({ block: "nearest" });
+}
+function jump(i) {
+  const h = HITS[i]; if (!h) return;
+  closeSearch(); show("archive"); openChat(h.chat_id, h.id, h.ts);
+}
+
+/* ---- views ---------------------------------------------------------- */
+function show(name) {
+  for (const v of ["digest", "archive"]) {
+    $(v).toggleAttribute("data-on", v === name);
+    $("nav-" + v).setAttribute("aria-current", String(v === name));
+  }
+  if (name === "digest") { $("title").textContent = "O que perdi"; $("subtitle").textContent = ""; }
+  else if (!CHAT) { $("title").textContent = "Arquivo"; document.body.classList.add("on-list"); }
+}
+
+/* ---- live ----------------------------------------------------------- */
+/** The chat is the second underscore segment of a WAHA message id:
+    {fromMe}_{chatId}_{serial}[_{participant}]. */
+function chatOfId(id) {
+  const parts = String(id || "").split("_");
+  return parts.length >= 3 && /@(c\.us|g\.us|lid|s\.whatsapp\.net)$/.test(parts[1])
+    ? parts[1] : null;
+}
+
+/** Append one live message instead of reloading the thread: a reload would
+    throw away everything the reader had paged back through. */
+function appendLive(p) {
+  const box = $("msgs");
+  if (box.querySelector(`[data-mid="${CSS.escape(String(p.id))}"]`)) return;
+  const stick = box.scrollHeight - box.scrollTop - box.clientHeight < 80;
+  box.append(bubble({
+    id: p.id, chat_id: CHAT, ts: new Date((p.timestamp || 0) * 1000).toISOString(),
+    from_me: !!p.fromMe, sender_jid: p.participant || p.from, body: p.body,
+    has_media: !!p.hasMedia, media_name: (p.media || {}).filename,
+    media_expires_at: null, ack: p.ack, edited_at: null, revoked_at: null,
+  }));
+  updateCount();
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+
+function live() {
+  if (es) es.close();
+  es = new EventSource(`/api/events?x_api_key=${encodeURIComponent(KEY)}`);
+  es.onmessage = ev => {
+    let d; try { d = JSON.parse(ev.data); } catch { return; }
+    if (d.event !== "message.any") return;
+    const p = d.payload || {};
+    /* Same rule the backend uses: the chat is the second segment of the
+       message id. `to` is null on direct messages and holds the participant
+       on group messages, so from/to cannot identify the chat. */
+    const chat = chatOfId(p.id) || (p.fromMe ? p.to : p.from);
+    if (chat === CHAT) appendLive(p);
+    loadChats();
+  };
+  es.onerror = () => { /* EventSource reconnects on its own */ };
+}
+
+/* ---- send ----------------------------------------------------------- */
+/** The send endpoints make the caller name the recipient before writing to it,
+    because an AI agent resolving "Marcos" to the wrong chat is the failure they
+    exist for. Here a human clicked a row in the list, so the name is whatever
+    the archive already says it is — echo it back, and waive the group and
+    homonym prompts, which only guard against a resolution nobody made.
+    A chat with no name is identified by its JID, which is what the server
+    compares against too. */
+function confirmName() {
+  const c = CHATS.find(x => x.id === CHAT);
+  return (c && c.name) || CHAT;
+}
+$("compose").addEventListener("submit", async e => {
+  e.preventDefault();
+  const t = $("text").value.trim();
+  if (!t || !CHAT) return;
+  $("text").value = "";
+  try {
+    await api("/api/send/text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: CHAT, text: t, confirm_name: confirmName(),
+        allow_group: true, allow_ambiguous: true,
+      }),
+    });
+  } catch { /* banner set by api() */ }
+});
+$("attach").addEventListener("click", () => $("file").click());
+$("file").addEventListener("change", async () => {
+  const f = $("file").files[0]; if (!f || !CHAT) return;
+  const fd = new FormData();
+  fd.append("chat_id", CHAT); fd.append("file", f);
+  fd.append("confirm_name", confirmName());
+  fd.append("allow_group", "true"); fd.append("allow_ambiguous", "true");
+  try { await api("/api/send/media", { method: "POST", body: fd }); }
+  catch { /* banner set by api() */ }
+  $("file").value = "";
+});
+
+/* ---- wiring --------------------------------------------------------- */
+$("nav-digest").addEventListener("click", () => show("digest"));
+$("nav-archive").addEventListener("click", () => show("archive"));
+$("cue").addEventListener("click", openSearch);
+$("key").addEventListener("click", askKey);
+$("sync").addEventListener("click", async e => {
+  e.target.textContent = "sincronizando…";
+  try { await api("/api/backfill/start", { method: "POST" }); } catch {}
+  setTimeout(() => { e.target.textContent = "sincronizar"; overview(); }, 3000);
+});
+$("theme").addEventListener("click", () => {
+  const cur = document.documentElement.getAttribute("data-theme");
+  const next = cur === "dark" ? "light" : cur === "light" ? "" : "dark";
+  if (next) document.documentElement.setAttribute("data-theme", next);
+  else document.documentElement.removeAttribute("data-theme");
+  localStorage.setItem("theme", next);
+});
+$("q").addEventListener("input", () => {
+  clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 180);
+});
+$("ov").addEventListener("click", e => { if (e.target === $("ov")) closeSearch(); });
+
+document.addEventListener("keydown", e => {
+  const typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+  if (e.key === "Escape") { closeSearch(); return; }
+  if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key === "k")) {
+    e.preventDefault(); openSearch(); return;
+  }
+  if ($("ov").hasAttribute("data-on")) {
+    if (e.key === "ArrowDown") { e.preventDefault(); moveHit(1); }
+    if (e.key === "ArrowUp") { e.preventDefault(); moveHit(-1); }
+    if (e.key === "Enter") { e.preventDefault(); jump(HIT_I); }
+  }
+});
+
+/* ---- boot ----------------------------------------------------------- */
+const savedTheme = localStorage.getItem("theme");
+if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
+
+async function boot() {
+  if (!KEY) { askKey(); return; }
+  await overview();
+  loadDigest(); loadChats(); live();
+  setInterval(overview, 20000);
+}
+boot();
+</script>

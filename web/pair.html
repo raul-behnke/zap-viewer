@@ -1,0 +1,137 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zap viewer — parear</title>
+<style>
+  body { font: 15px system-ui; margin: 0; display: flex; min-height: 100vh;
+         align-items: center; justify-content: center; background: #f6f6f6; }
+  .card { background: #fff; padding: 28px 32px; border-radius: 12px;
+          box-shadow: 0 2px 12px rgba(0,0,0,.1); text-align: center; max-width: 420px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 18px; }
+  #qrbox { width: 292px; height: 292px; margin: 0 auto; display: flex;
+           align-items: center; justify-content: center; background: #fafafa;
+           border: 1px solid #e5e5e5; border-radius: 8px; }
+  #qrbox img { width: 292px; height: 292px; display: block; }
+  #state { margin-top: 14px; font-weight: 600; }
+  #hint { color: #666; font-size: 13px; margin-top: 6px; min-height: 34px; }
+  button { font: inherit; padding: 8px 14px; margin: 12px 4px 0; cursor: pointer;
+           border: 1px solid #ccc; background: #fff; border-radius: 6px; }
+  button:hover { background: #f0f0f0; }
+  ol { text-align: left; color: #555; font-size: 13px; line-height: 1.6;
+       margin: 18px 0 0; padding-left: 20px; }
+  .ok { color: #167c2b; }
+  .bad { color: #b00; }
+</style>
+<div class="card">
+  <h1>Conectar WhatsApp</h1>
+  <div class="sub">sessão <b>default</b> · engine GOWS</div>
+
+  <div id="qrbox"><span id="qrmsg">carregando…</span></div>
+
+  <div id="state">—</div>
+  <div id="hint"></div>
+
+  <button id="restart">reiniciar sessão</button>
+  <button id="setkey">trocar chave</button>
+
+  <ol>
+    <li>No <b>celular</b>, abra o WhatsApp</li>
+    <li>Android: menu <b>⋮</b> · iPhone: <b>Ajustes</b></li>
+    <li><b>Aparelhos conectados</b> → <b>Conectar um aparelho</b></li>
+    <li>Aponte a câmera para o QR acima</li>
+  </ol>
+</div>
+<script>
+let KEY = localStorage.getItem("apikey") || "";
+let timer = null;
+let objUrl = null;
+
+const $ = id => document.getElementById(id);
+
+function askKey() {
+  const k = prompt("API key:", KEY);
+  if (k) { KEY = k; localStorage.setItem("apikey", k); }
+}
+
+async function api(path, opts) {
+  return fetch(path, { ...opts, headers: { "X-API-Key": KEY } });
+}
+
+function setQr(blob) {
+  if (objUrl) URL.revokeObjectURL(objUrl);
+  objUrl = URL.createObjectURL(blob);
+  const img = document.createElement("img");
+  img.alt = "QR code";
+  img.src = objUrl;
+  $("qrbox").replaceChildren(img);
+}
+
+function setMsg(text) {
+  const span = document.createElement("span");
+  span.textContent = text;
+  $("qrbox").replaceChildren(span);
+}
+
+async function tick() {
+  if (!KEY) { setMsg("informe a API key"); return; }
+
+  let status = "?";
+  try {
+    const r = await api("/api/session/status");
+    if (r.status === 401) { $("state").textContent = "chave inválida"; setMsg("—"); return; }
+    status = (await r.json()).status || "?";
+  } catch (e) {
+    $("state").textContent = "API fora do ar";
+    return;
+  }
+
+  $("state").textContent = status;
+  $("state").className = status === "WORKING" ? "ok" : (status === "FAILED" ? "bad" : "");
+
+  if (status === "WORKING") {
+    setMsg("✓ conectado");
+    $("hint").textContent = "Pareado. O histórico já está sincronizando.";
+    clearInterval(timer);
+    return;
+  }
+
+  if (status === "FAILED" || status === "STOPPED") {
+    $("hint").textContent = "Sessão caída — reiniciando sozinha…";
+    await restart();
+    return;
+  }
+
+  if (status !== "SCAN_QR_CODE") {
+    $("hint").textContent = "Aguardando a sessão subir…";
+    setMsg(status.toLowerCase());
+    return;
+  }
+
+  $("hint").textContent = "QR válido por ~20s. Esta página troca sozinha.";
+  try {
+    const r = await api("/api/session/qr");
+    if (r.ok) setQr(await r.blob()); else setMsg("QR indisponível");
+  } catch (e) {
+    setMsg("QR indisponível");
+  }
+}
+
+async function restart() {
+  setMsg("reiniciando…");
+  try {
+    await api("/api/session/stop", { method: "POST" });
+    await new Promise(r => setTimeout(r, 4000));
+    await api("/api/session/start", { method: "POST" });
+    await new Promise(r => setTimeout(r, 6000));
+  } catch (e) { /* tick() reports the state on the next pass */ }
+  tick();
+}
+
+$("restart").addEventListener("click", restart);
+$("setkey").addEventListener("click", () => { askKey(); tick(); });
+
+if (!KEY) askKey();
+tick();
+timer = setInterval(tick, 15000);
+</script>

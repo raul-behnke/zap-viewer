@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: zap
+      POSTGRES_PASSWORD: zap
+      POSTGRES_DB: zap
+    ports:
+      # Só para os testes. 55432 evita conflito com um Postgres local na 5432.
+      - "127.0.0.1:${ZAP_DB_PORT:-55432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zap"]
+      interval: 5s
+      retries: 10
+
+  waha:
+    image: ${WAHA_IMAGE:-devlikeapro/waha:gows}
+    env_file: .env
+    volumes:
+      - waha_sessions:/app/.sessions
+    restart: unless-stopped
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://zap:zap@postgres:5432/zap
+      WAHA_URL: http://waha:3000
+    ports:
+      # Só localhost: a API dá acesso ao WhatsApp inteiro.
+      - "127.0.0.1:${ZAP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      waha:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  waha_sessions:
