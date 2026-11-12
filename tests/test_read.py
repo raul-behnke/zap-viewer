@@ -8,7 +8,7 @@ from app.config import settings
 from app.main import app
 from app.sync import handle_event, upsert_message
 
-HEADERS = {"X-API-Key": settings.api_key}
+HEADERS: dict[str, str] = {}
 
 
 def _msg(n: int, body: str, chat: str = "5511999@c.us") -> dict:
@@ -40,7 +40,7 @@ async def seeded(pool: AsyncConnectionPool) -> AsyncConnectionPool:
 
 async def test_chats_lists_newest_first(seeded: AsyncConnectionPool) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/chats", headers=HEADERS)
         assert r.status_code == 200
@@ -48,19 +48,11 @@ async def test_chats_lists_newest_first(seeded: AsyncConnectionPool) -> None:
         assert set(ids) == {"5511999@c.us", "5511777@c.us"}
 
 
-async def test_chats_requires_key(seeded: AsyncConnectionPool) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        r = await client.get("/api/chats")
-        assert r.status_code == 401
-
-
 async def test_messages_returns_chat_in_reverse_time_order(
     seeded: AsyncConnectionPool,
 ) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get(
             "/api/chats/5511999@c.us/messages", headers=HEADERS
@@ -76,7 +68,7 @@ async def test_messages_cursor_excludes_newer(
         1767225600 + 3 * 60, tz=timezone.utc
     ).isoformat()
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get(
             "/api/chats/5511999@c.us/messages",
@@ -101,7 +93,7 @@ async def test_messages_hides_stub_until_real_message_arrives(
         await handle_event(conn, "message.ack", {"id": stub_id, "ack": 1}, 30)
 
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get(
             "/api/chats/5511999@c.us/messages", headers=HEADERS
@@ -126,7 +118,7 @@ async def test_messages_hides_stub_until_real_message_arrives(
         )
 
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get(
             "/api/chats/5511999@c.us/messages", headers=HEADERS
@@ -136,7 +128,7 @@ async def test_messages_hides_stub_until_real_message_arrives(
 
 async def test_search_finds_by_word(seeded: AsyncConnectionPool) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/search?q=reunião", headers=HEADERS)
         hits = r.json()
@@ -148,7 +140,7 @@ async def test_search_is_accent_and_stem_tolerant(
     seeded: AsyncConnectionPool,
 ) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/search?q=reuniao", headers=HEADERS)
         assert r.status_code == 200
@@ -156,7 +148,7 @@ async def test_search_is_accent_and_stem_tolerant(
 
 async def test_search_scoped_to_chat(seeded: AsyncConnectionPool) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get(
             "/api/search?q=chat&chat_id=5511777@c.us", headers=HEADERS
@@ -166,7 +158,7 @@ async def test_search_scoped_to_chat(seeded: AsyncConnectionPool) -> None:
 
 async def test_search_returns_highlight(seeded: AsyncConnectionPool) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/search?q=noite", headers=HEADERS)
         highlight = r.json()[0]["highlight"]

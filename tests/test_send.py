@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.config import settings
 
-HEADERS = {"X-API-Key": settings.api_key}
+HEADERS: dict[str, str] = {}
 
 
 @pytest.fixture
@@ -72,7 +72,7 @@ def seeded_messages(seeded):
 
 
 def test_send_text(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/text",
             json={
@@ -87,7 +87,7 @@ def test_send_text(captured, seeded):
 
 
 def test_send_text_to_unknown_chat_never_reaches_waha(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/text",
             json={
@@ -105,7 +105,7 @@ def test_send_text_to_unknown_chat_never_reaches_waha(captured, seeded):
 
 
 def test_send_text_with_wrong_name_never_reaches_waha(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/text",
             json={
@@ -124,7 +124,7 @@ def test_send_text_with_wrong_name_never_reaches_waha(captured, seeded):
 
 
 def test_send_text_to_group_needs_allow_group(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/text",
             json={
@@ -152,7 +152,7 @@ def test_send_text_to_group_needs_allow_group(captured, seeded):
 
 
 def test_successful_send_is_logged(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         client.post(
             "/api/send/text",
             json={
@@ -171,7 +171,7 @@ def test_waha_failure_is_logged_as_a_failed_attempt(monkeypatch, captured, seede
         raise main.WahaError("down")
 
     monkeypatch.setattr(main.waha, "send_text", boom)
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/text",
             json={
@@ -190,7 +190,7 @@ def test_waha_failure_is_logged_as_a_failed_attempt(monkeypatch, captured, seede
 
 
 def test_edit_own_recent_message(captured, seeded_messages):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.put(
             "/api/chats/5511999@c.us/messages/own-recent",
             json={"text": "texto novo", "confirm_name": "Marcos Silva"},
@@ -210,7 +210,7 @@ def test_edit_own_recent_message(captured, seeded_messages):
 
 
 def test_edit_rejects_incoming_and_expired_messages(captured, seeded_messages):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         incoming = client.put(
             "/api/chats/5511999@c.us/messages/incoming-recent",
             json={"text": "não pode", "confirm_name": "Marcos Silva"},
@@ -227,7 +227,7 @@ def test_edit_rejects_incoming_and_expired_messages(captured, seeded_messages):
 
 
 def test_delete_requires_exact_message_confirmation(captured, seeded_messages):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         refused = client.request(
             "DELETE",
             "/api/chats/5511999@c.us/messages/own-recent",
@@ -257,7 +257,7 @@ def test_delete_requires_exact_message_confirmation(captured, seeded_messages):
 
 
 def test_delete_rejects_expired_message(captured, seeded_messages):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.request(
             "DELETE",
             "/api/chats/5511999@c.us/messages/own-old-delete",
@@ -278,7 +278,7 @@ def test_mutation_failure_is_marked_uncertain(
         raise main.WahaError("timeout")
 
     monkeypatch.setattr(main.waha, "edit_message", boom)
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.put(
             "/api/chats/5511999@c.us/messages/own-recent",
             json={"text": "talvez", "confirm_name": "Marcos Silva"},
@@ -293,7 +293,7 @@ def test_mutation_failure_is_marked_uncertain(
 
 
 def test_message_action_history_can_be_filtered(captured, seeded_messages):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         client.put(
             "/api/chats/5511999@c.us/messages/own-recent",
             json={"text": "texto novo", "confirm_name": "Marcos Silva"},
@@ -309,16 +309,22 @@ def test_message_action_history_can_be_filtered(captured, seeded_messages):
     assert r.json()[0]["action"] == "edit"
 
 
-def test_send_text_requires_key(captured):
-    with TestClient(main.app) as client:
+def test_send_rejects_cross_site_form(captured):
+    """Without a key, a page on another site posting a form to localhost
+    is the attack left; it must not send."""
+    with TestClient(main.app, base_url="http://localhost:8000") as client:
         r = client.post(
-            "/api/send/text", json={"chat_id": "x", "text": "y"}
+            "/api/send/media",
+            headers={"Origin": "https://evil.example"},
+            data={"chat_id": "x", "confirm_name": "y"},
+            files={"file": ("a.txt", b"oi", "text/plain")},
         )
-        assert r.status_code == 401
+        assert r.status_code == 403
+    assert captured == {}
 
 
 def test_send_media_passes_base64_and_mimetype(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/media",
             data={
@@ -339,7 +345,7 @@ def test_send_media_passes_base64_and_mimetype(captured, seeded):
 
 
 def test_send_media_to_unknown_chat_never_reaches_waha(captured, seeded):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/media",
             data={"chat_id": "5599999@c.us", "confirm_name": "Fulano"},
@@ -355,7 +361,7 @@ def test_send_media_to_unknown_chat_never_reaches_waha(captured, seeded):
 
 def test_send_media_rejects_oversized_upload(captured):
     big = b"x" * (64 * 1024 * 1024 + 1)
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/media",
             data={"chat_id": "5511999@c.us"},
@@ -367,7 +373,7 @@ def test_send_media_rejects_oversized_upload(captured):
 
 
 def test_send_seen(captured):
-    with TestClient(main.app) as client:
+    with TestClient(main.app, base_url="http://localhost") as client:
         r = client.post(
             "/api/send/seen",
             json={"chat_id": "5511999@c.us", "message_ids": ["m1"]},

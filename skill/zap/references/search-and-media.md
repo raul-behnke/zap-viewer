@@ -8,7 +8,7 @@ acentuados enviados crus na URL podem ser rejeitados antes da busca.
 
 ```bash
 curl -sS --fail-with-body --max-time 30 -G \
-  -H "X-API-Key: $ZAP_API_KEY" "$ZAP_URL/api/chats" \
+  "$ZAP_URL/api/chats" \
   --data-urlencode "q=marcos" --data-urlencode "limit=20"
 ```
 
@@ -22,7 +22,6 @@ o nome acentuado ou um trecho sem a letra acentuada. A resposta inclui `id`,
 
 ```bash
 curl -sS --fail-with-body --max-time 30 \
-  -H "X-API-Key: $ZAP_API_KEY" \
   "$ZAP_URL/api/chats/CHAT_ID/messages?limit=50"
 ```
 
@@ -30,7 +29,6 @@ As mensagens vêm da mais nova para a mais antiga. Para paginar:
 
 ```bash
 curl -sS --fail-with-body --max-time 30 -G \
-  -H "X-API-Key: $ZAP_API_KEY" \
   "$ZAP_URL/api/chats/CHAT_ID/messages" \
   --data-urlencode "limit=50" \
   --data-urlencode "before_ts=2026-03-01T00:00:00Z"
@@ -45,7 +43,7 @@ Os campos importantes incluem `id`, `ts`, `body`, `type`, `has_media`,
 
 ```bash
 curl -sS --fail-with-body --max-time 30 -G \
-  -H "X-API-Key: $ZAP_API_KEY" "$ZAP_URL/api/search" \
+  "$ZAP_URL/api/search" \
   --data-urlencode "q=orçamento instalação" \
   --data-urlencode "limit=30"
 ```
@@ -59,7 +57,7 @@ ou o contexto da conversa mudarem o sentido.
 
 ```bash
 curl -sS --fail-with-body --max-time 30 \
-  -H "X-API-Key: $ZAP_API_KEY" "$ZAP_URL/api/overview"
+  "$ZAP_URL/api/overview"
 ```
 
 Use quando algo parecer faltar ou quando o dono perguntar sobre sincronização.
@@ -72,7 +70,6 @@ Crie um diretório privado temporário e não grave mídia no projeto:
 ZAP_TMP_DIR="$(mktemp -d)"
 chmod 700 "$ZAP_TMP_DIR"
 curl -sS --fail-with-body --max-time 120 \
-  -H "X-API-Key: $ZAP_API_KEY" \
   "$ZAP_URL/api/media/MESSAGE_ID" -o "$ZAP_TMP_DIR/arquivo"
 ```
 

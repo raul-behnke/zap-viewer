@@ -281,7 +281,6 @@
   <div id="state"></div>
   <div class="railbtns">
     <button id="theme">tema</button>
-    <button id="key">chave</button>
     <button id="sync">sincronizar</button>
   </div>
 </div>
@@ -353,19 +352,12 @@ function chatLabel(c) {
 }
 
 /* ---- state --------------------------------------------------------- */
-let KEY = localStorage.getItem("apikey") || "";
 let CHAT = null, CHATS = [], HITS = [], HIT_I = -1, OVERVIEW = null;
 let OLDEST = null, HAS_MORE = true, LOADING = false;
 let searchTimer = null, es = null;
 
-function askKey() {
-  const k = prompt("API key:", KEY);
-  if (k) { KEY = k.trim(); localStorage.setItem("apikey", KEY); boot(); }
-}
 async function api(path, opts = {}) {
-  const r = await fetch(path, { ...opts, headers: { "X-API-Key": KEY, ...(opts.headers || {}) } });
-  if (r.status === 401) { setBanner("Chave inválida.", "chave", askKey); throw new Error("401"); }
-  return r;
+  return fetch(path, opts);
 }
 async function json(path) { const r = await api(path); return r.ok ? r.json() : null; }
 
@@ -759,7 +751,7 @@ function appendLive(p) {
 
 function live() {
   if (es) es.close();
-  es = new EventSource(`/api/events?x_api_key=${encodeURIComponent(KEY)}`);
+  es = new EventSource("/api/events");
   es.onmessage = ev => {
     let d; try { d = JSON.parse(ev.data); } catch { return; }
     if (d.event !== "message.any") return;
@@ -817,7 +809,6 @@ $("file").addEventListener("change", async () => {
 $("nav-digest").addEventListener("click", () => show("digest"));
 $("nav-archive").addEventListener("click", () => show("archive"));
 $("cue").addEventListener("click", openSearch);
-$("key").addEventListener("click", askKey);
 $("sync").addEventListener("click", async e => {
   e.target.textContent = "sincronizando…";
   try { await api("/api/backfill/start", { method: "POST" }); } catch {}
@@ -853,7 +844,6 @@ const savedTheme = localStorage.getItem("theme");
 if (savedTheme) document.documentElement.setAttribute("data-theme", savedTheme);
 
 async function boot() {
-  if (!KEY) { askKey(); return; }
   await overview();
   loadDigest(); loadChats(); live();
   setInterval(overview, 20000);

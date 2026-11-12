@@ -8,7 +8,7 @@ import app.main as main
 from app.config import settings
 from app.sync import upsert_message
 
-HEADERS = {"X-API-Key": settings.api_key}
+HEADERS: dict[str, str] = {}
 
 WITH_MEDIA = {
     "id": "mm1",
@@ -48,7 +48,7 @@ async def test_media_streams_bytes(
 
     monkeypatch.setattr(main.waha, "fetch_media", fake_fetch)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/mm1", headers=HEADERS)
         assert r.status_code == 200
@@ -56,19 +56,11 @@ async def test_media_streams_bytes(
         assert r.headers["content-type"].startswith("image/jpeg")
 
 
-async def test_media_requires_key(with_media: AsyncConnectionPool) -> None:
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
-    ) as client:
-        r = await client.get("/api/media/mm1")
-        assert r.status_code == 401
-
-
 async def test_media_404_for_unknown_message(
     with_media: AsyncConnectionPool,
 ) -> None:
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/nope", headers=HEADERS)
         assert r.status_code == 404
@@ -83,7 +75,7 @@ async def test_media_410_when_expired(pool: AsyncConnectionPool) -> None:
             (past,),
         )
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/mm1", headers=HEADERS)
         assert r.status_code == 410
@@ -108,7 +100,7 @@ async def test_media_html_mime_is_not_served_as_html(
 
     monkeypatch.setattr(main.waha, "fetch_media", fake_fetch)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/hostile", headers=HEADERS)
         assert r.status_code == 200
@@ -135,7 +127,7 @@ async def test_media_svg_mime_is_not_served_as_svg(
 
     monkeypatch.setattr(main.waha, "fetch_media", fake_fetch)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/svg-hostile", headers=HEADERS)
         assert r.status_code == 200
@@ -161,7 +153,7 @@ async def test_media_content_disposition_handles_non_latin1_filename(
 
     monkeypatch.setattr(main.waha, "fetch_media", fake_fetch)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/accented", headers=HEADERS)
         assert r.status_code == 200
@@ -178,7 +170,7 @@ async def test_media_410_when_waha_says_gone(
 
     monkeypatch.setattr(main.waha, "fetch_media", fake_fetch)
     async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=main.app), base_url="http://test"
+        transport=httpx.ASGITransport(app=main.app), base_url="http://localhost"
     ) as client:
         r = await client.get("/api/media/mm1", headers=HEADERS)
         assert r.status_code == 410

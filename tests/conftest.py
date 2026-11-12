@@ -8,9 +8,8 @@ os.environ.setdefault(
     "DATABASE_URL", "postgresql://zap:zap@localhost:55432/zap_test"
 )
 # app.config rejects the "dev" default outside tests (finding I7); give the
-# test run real-looking secrets so lifespan-driven tests (TestClient(app))
+# test run real-looking secrets so lifespan-driven tests (TestClient(app, base_url="http://localhost"))
 # don't trip that guard.
-os.environ.setdefault("API_KEY", "test-api-key")
 os.environ.setdefault("WHATSAPP_HOOK_HMAC_KEY", "test-hook-hmac-key")
 
 from app.db import close_db, get_pool, init_db  # noqa: E402

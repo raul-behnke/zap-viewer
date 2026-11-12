@@ -1,6 +1,5 @@
 import asyncio
 import base64
-import hmac
 import json as _json
 import logging
 from asyncio import Queue
@@ -16,7 +15,6 @@ from fastapi import (
     FastAPI,
     File,
     Form,
-    Header,
     HTTPException,
     Query,
     Request,
@@ -55,16 +53,26 @@ WAHA_UNAVAILABLE = "waha unavailable"
 OUTCOME_UNKNOWN = "waha unavailable; outcome unknown; check chat before retrying"
 
 
-async def require_key(x_api_key: str = Header(default="")) -> None:
-    if not hmac.compare_digest(x_api_key.encode(), settings.api_key.encode()):
-        raise HTTPException(status_code=401, detail="invalid api key")
+LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
+
+
+async def require_local(request: Request) -> None:
+    """No key: the port is bound to localhost. What is left to stop is a web
+    page in the owner's own browser reaching it — a foreign Host means DNS
+    rebinding, a foreign Origin means a cross-site request."""
+    host = request.headers.get("host", "")
+    if host.rsplit(":", 1)[0] not in LOCAL_HOSTS:
+        raise HTTPException(status_code=403, detail="local access only")
+    origin = request.headers.get("origin")
+    if origin is not None and origin != f"http://{host}":
+        raise HTTPException(status_code=403, detail="cross-origin request")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    if settings.api_key == "dev" or settings.hook_hmac_key == "dev":
+    if settings.hook_hmac_key == "dev":
         raise RuntimeError(
-            "API_KEY and WHATSAPP_HOOK_HMAC_KEY must be set to a real secret, "
+            "WHATSAPP_HOOK_HMAC_KEY must be set to a real secret, "
             "not the 'dev' default"
         )
     await init_db(settings.database_url)
@@ -97,7 +105,7 @@ async def index() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
 
 
-@app.get("/api/session/status", dependencies=[Depends(require_key)])
+@app.get("/api/session/status", dependencies=[Depends(require_local)])
 async def session_status() -> dict[str, Any]:
     try:
         return await waha.status()
@@ -106,7 +114,7 @@ async def session_status() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=WAHA_UNAVAILABLE) from exc
 
 
-@app.post("/api/session/start", dependencies=[Depends(require_key)])
+@app.post("/api/session/start", dependencies=[Depends(require_local)])
 async def session_start() -> dict[str, Any]:
     try:
         return await waha.start()
@@ -115,7 +123,7 @@ async def session_start() -> dict[str, Any]:
         raise HTTPException(status_code=503, detail=WAHA_UNAVAILABLE) from exc
 
 
-@app.post("/api/session/stop", dependencies=[Depends(require_key)])
+@app.post("/api/session/stop", dependencies=[Depends(require_local)])
 async def session_stop() -> dict[str, Any]:
     try:
         return await waha.stop()
@@ -129,7 +137,7 @@ async def pair() -> FileResponse:
     return FileResponse(WEB_DIR / "pair.html")
 
 
-@app.get("/api/session/qr", dependencies=[Depends(require_key)])
+@app.get("/api/session/qr", dependencies=[Depends(require_local)])
 async def session_qr() -> Response:
     try:
         return Response(content=await waha.qr(), media_type="image/png")
@@ -152,11 +160,8 @@ async def broadcast(event: str, payload: dict) -> None:
         _subscribers.discard(q)
 
 
-@app.get("/api/events")
-async def events(x_api_key: str = "") -> StreamingResponse:
-    if not hmac.compare_digest(x_api_key.encode(), settings.api_key.encode()):
-        raise HTTPException(status_code=401, detail="invalid api key")
-
+@app.get("/api/events", dependencies=[Depends(require_local)])
+async def events() -> StreamingResponse:
     q: Queue = Queue(maxsize=100)
     _subscribers.add(q)
 
@@ -210,7 +215,7 @@ def reject_oversized(request: Request) -> None:
         raise HTTPException(status_code=413, detail="file over 64 MB")
 
 
-@app.post("/api/send/text", dependencies=[Depends(require_key)])
+@app.post("/api/send/text", dependencies=[Depends(require_local)])
 async def send_text(body: SendText) -> dict:
     async with get_pool().connection() as conn:
         try:
@@ -247,7 +252,7 @@ async def send_text(body: SendText) -> dict:
 
 @app.post(
     "/api/send/media",
-    dependencies=[Depends(require_key), Depends(reject_oversized)],
+    dependencies=[Depends(require_local), Depends(reject_oversized)],
 )
 async def send_media(
     chat_id: str = Form(...),
@@ -290,7 +295,7 @@ async def send_media(
         return result
 
 
-@app.post("/api/send/seen", dependencies=[Depends(require_key)])
+@app.post("/api/send/seen", dependencies=[Depends(require_local)])
 async def send_seen(body: SendSeen) -> dict:
     try:
         return await waha.send_seen(body.chat_id, body.message_ids)
@@ -301,7 +306,7 @@ async def send_seen(body: SendSeen) -> dict:
 
 @app.put(
     "/api/chats/{chat_id}/messages/{message_id}",
-    dependencies=[Depends(require_key)],
+    dependencies=[Depends(require_local)],
 )
 async def edit_message(
     chat_id: str, message_id: str, body: EditMessageRequest
@@ -360,7 +365,7 @@ async def edit_message(
 
 @app.delete(
     "/api/chats/{chat_id}/messages/{message_id}",
-    dependencies=[Depends(require_key)],
+    dependencies=[Depends(require_local)],
 )
 async def delete_message(
     chat_id: str, message_id: str, body: DeleteMessageRequest
@@ -419,7 +424,7 @@ async def delete_message(
         return {"result": result, "verification": "pending_webhook"}
 
 
-@app.get("/api/message-actions", dependencies=[Depends(require_key)])
+@app.get("/api/message-actions", dependencies=[Depends(require_local)])
 async def message_actions(
     chat_id: str | None = None,
     message_id: str | None = None,
@@ -493,7 +498,7 @@ async def webhook(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.post("/api/backfill/start", dependencies=[Depends(require_key)])
+@app.post("/api/backfill/start", dependencies=[Depends(require_local)])
 async def backfill_start() -> dict:
     task = start_backfill_pass(get_pool(), waha, settings.media_retention_days)
     if task is None:
@@ -501,7 +506,7 @@ async def backfill_start() -> dict:
     return {"status": "started"}
 
 
-@app.get("/api/chats", dependencies=[Depends(require_key)])
+@app.get("/api/chats", dependencies=[Depends(require_local)])
 async def list_chats(
     limit: int = 100, offset: int = 0, q: str | None = None
 ) -> list[dict]:
@@ -529,7 +534,7 @@ async def list_chats(
 
 
 @app.get(
-    "/api/chats/{chat_id}/messages", dependencies=[Depends(require_key)]
+    "/api/chats/{chat_id}/messages", dependencies=[Depends(require_local)]
 )
 async def list_messages(
     chat_id: str, limit: int = 50, before_ts: str | None = None
@@ -585,7 +590,7 @@ def _message_row(r: tuple) -> dict:
     }
 
 
-@app.get("/api/search", dependencies=[Depends(require_key)])
+@app.get("/api/search", dependencies=[Depends(require_local)])
 async def search(
     q: str, chat_id: str | None = None, limit: int = 50
 ) -> list[dict]:
@@ -621,7 +626,7 @@ async def search(
     ]
 
 
-@app.get("/api/backfill/status", dependencies=[Depends(require_key)])
+@app.get("/api/backfill/status", dependencies=[Depends(require_local)])
 async def backfill_status() -> dict:
     async with get_pool().connection() as conn:
         cur = await conn.execute(
@@ -674,7 +679,7 @@ def _safe_media_type(mime: str | None) -> str:
     return "application/octet-stream"
 
 
-@app.get("/api/media/{message_id}", dependencies=[Depends(require_key)])
+@app.get("/api/media/{message_id}", dependencies=[Depends(require_local)])
 async def media(message_id: str) -> Response:
     async with get_pool().connection() as conn:
         cur = await conn.execute(
@@ -741,7 +746,7 @@ def _summary_row(r: tuple) -> dict:
     }
 
 
-@app.get("/api/summaries", dependencies=[Depends(require_key)])
+@app.get("/api/summaries", dependencies=[Depends(require_local)])
 async def list_summaries(
     limit: int = 50, offset: int = 0, only_stale: bool = False
 ) -> list[dict]:
@@ -783,7 +788,7 @@ async def list_summaries(
     ]
 
 
-@app.get("/api/summaries/pending", dependencies=[Depends(require_key)])
+@app.get("/api/summaries/pending", dependencies=[Depends(require_local)])
 async def list_pending_summaries(
     limit: int = 20, min_pending: int = 1
 ) -> list[dict]:
@@ -822,7 +827,7 @@ async def list_pending_summaries(
     ]
 
 
-@app.put("/api/summaries/{chat_id}", dependencies=[Depends(require_key)])
+@app.put("/api/summaries/{chat_id}", dependencies=[Depends(require_local)])
 async def put_summary(chat_id: str, body: SummaryUpsert) -> dict:
     sql = """
         INSERT INTO chat_summaries
@@ -869,7 +874,7 @@ async def put_summary(chat_id: str, body: SummaryUpsert) -> dict:
     return _summary_row(row)
 
 
-@app.get("/api/overview", dependencies=[Depends(require_key)])
+@app.get("/api/overview", dependencies=[Depends(require_local)])
 async def overview() -> dict:
     try:
         status = await waha.status()

@@ -24,7 +24,6 @@ ZAP_PAYLOAD="$(jq -n \
   '{chat_id:$chat_id,text:$text,confirm_name:$confirm_name}')"
 curl -sS --fail-with-body --max-time 120 -X POST \
   "$ZAP_URL/api/send/text" \
-  -H "X-API-Key: $ZAP_API_KEY" \
   -H 'Content-Type: application/json' \
   --data-binary "$ZAP_PAYLOAD"
 ```

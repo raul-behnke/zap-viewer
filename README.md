@@ -34,7 +34,7 @@ em 10 minutos”. A skill sempre mostra destinatário e texto antes de enviar.
 
 ## Endpoints
 
-Todas as rotas exigem `X-API-Key`, menos `/health`, `/` e `/pair`.
+Sem chave: a API só escuta em localhost e recusa pedidos vindos de outros sites.
 
 | Método | Rota | O que faz |
 |---|---|---|
@@ -46,7 +46,7 @@ Todas as rotas exigem `X-API-Key`, menos `/health`, `/` e `/pair`.
 | GET | `/api/chats/{chat_id}/messages?limit&before_ts` | thread |
 | GET | `/api/search?q&chat_id&limit` | busca full-text pt-BR |
 | GET | `/api/media/{message_id}` | mídia (410 se expirou) |
-| GET | `/api/events?x_api_key=` | SSE ao vivo |
+| GET | `/api/events` | SSE ao vivo |
 | POST | `/api/send/text` | `{chat_id, text, confirm_name, allow_group?, allow_ambiguous?, reply_to?}` |
 | POST | `/api/send/media` | multipart `chat_id`, `confirm_name`, `file`, `allow_group?`, `allow_ambiguous?`, `caption?` |
 | PUT | `/api/chats/{chat_id}/messages/{message_id}` | edita mensagem própria em até 15 min |

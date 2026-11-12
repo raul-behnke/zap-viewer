@@ -20,10 +20,6 @@
   header { display: flex; justify-content: space-between; align-items: center;
            padding: 16px 24px; border-bottom: 1px solid var(--line); }
   .brand { font-size: 14px; line-height: 20px; font-weight: 700; }
-  .btn-ghost { font: inherit; font-size: 14px; line-height: 20px; color: var(--muted);
-               background: none; border: 0; border-radius: 8px; padding: 8px 12px;
-               min-height: 44px; cursor: pointer; }
-  .btn-ghost:hover { color: var(--fg); }
 
   main { flex: 1; display: flex; flex-direction: column; align-items: center;
          padding: 48px 16px 0; }
@@ -59,14 +55,6 @@
   ol.steps li::before { content: counter(s); font-weight: 500; flex: none; width: 16px;
                         font-variant-numeric: tabular-nums; }
 
-  form { width: 100%; max-width: 400px; display: grid; gap: 24px; padding: 8px 0 48px; }
-  .label { display: block; font-size: 12px; line-height: 16px; font-weight: 500;
-           text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-  .field { width: 100%; border: 0; border-bottom: 1px solid var(--line);
-           background: transparent; padding: 12px 0; font: inherit; color: var(--fg); }
-  .field:focus-visible { outline: none; border-bottom-color: var(--fg);
-                         box-shadow: 0 2px 0 var(--accent); }
-  .error { font-size: 14px; line-height: 20px; margin: 8px 0 0; }
   .btn-primary { display: inline-flex; align-items: center; justify-content: center;
                  gap: 8px; border: 0; border-radius: 8px; background: var(--accent);
                  color: var(--fg); padding: 12px 16px; min-height: 44px;
@@ -102,7 +90,6 @@
 
 <header>
   <span class="brand">zap-viewer</span>
-  <button class="btn-ghost" id="setkey" type="button" hidden>Trocar chave</button>
 </header>
 
 <main>
@@ -131,19 +118,6 @@
     </ol>
   </section>
 
-  <form id="keyform" hidden>
-    <div class="copy" style="padding-bottom:0">
-      <h1><b>Informe a chave</b><br>para continuar</h1>
-      <p class="lead">É o valor de API_KEY no arquivo .env da instalação.</p>
-    </div>
-    <div>
-      <label class="label" for="key">Chave da API</label>
-      <input class="field" id="key" type="password" autocomplete="off" required>
-      <p class="error" id="keyerror" role="alert" hidden>Chave incorreta. Confira o API_KEY no .env e tente de novo.</p>
-    </div>
-    <button class="btn-primary" type="submit">Continuar</button>
-  </form>
-
   <section class="done" id="done" hidden>
     <p class="hero" id="messages">—</p>
     <p class="lead">mensagens no arquivo. O histórico continua chegando nas próximas horas.</p>
@@ -163,30 +137,14 @@
 const $ = id => document.getElementById(id);
 const QR_TTL = 20000;
 const fmt = n => new Intl.NumberFormat("pt-BR").format(Number(n || 0));
-let KEY = "", qrAt = 0, objUrl = null, busy = false, mode = "";
-
-try { KEY = localStorage.getItem("apikey") || ""; } catch (e) {}
-// The install agent opens /pair#key=…: a fragment never reaches the server.
-const fromHash = new URLSearchParams(location.hash.slice(1)).get("key");
-if (fromHash) {
-  KEY = fromHash;
-  try { localStorage.setItem("apikey", KEY); } catch (e) {}
-  history.replaceState(null, "", location.pathname);
-}
-addEventListener("hashchange", () => location.reload());
+let qrAt = 0, objUrl = null, busy = false, mode = "";
 
 function show(view) {
   mode = view;
   $("pairing").hidden = view !== "pairing";
-  $("keyform").hidden = view !== "key";
   $("done").hidden = view !== "done";
-  $("setkey").hidden = view === "key";
-  document.querySelector(".stage").hidden = view === "key";
 }
 
-function api(path, opts) {
-  return fetch(path, { ...opts, headers: { "X-API-Key": KEY } });
-}
 
 function footer(state, l2, v2, l3, v3) {
   $("f-state").textContent = state;
@@ -236,7 +194,7 @@ function phone(jid) {
 async function showDone() {
   if (mode !== "done") { show("done"); setCheck(); drain(0); }
   try {
-    const r = await api("/api/overview");
+    const r = await fetch("/api/overview");
     if (!r.ok) return;
     const o = await r.json();
     $("messages").textContent = fmt(o.backfill.messages);
@@ -245,18 +203,11 @@ async function showDone() {
 }
 
 async function tick() {
-  if (!KEY) { show("key"); footer("Aguardando chave", "Sessão", "—", "Próximo código", "—"); return; }
   if (busy) return;
 
   let s;
   try {
-    const r = await api("/api/session/status");
-    if (r.status === 401) {
-      KEY = "";
-      try { localStorage.removeItem("apikey"); } catch (e) {}
-      $("keyerror").hidden = false;
-      return tick();
-    }
+    const r = await fetch("/api/session/status");
     if (!r.ok) throw new Error(String(r.status));
     s = await r.json();
   } catch (e) {
@@ -285,7 +236,7 @@ async function tick() {
   footer("Pronto para escanear", "Sessão", name, "Próximo código", "—");
   if (qrAt && Date.now() - qrAt < QR_TTL - 2000) return;
   try {
-    const r = await api("/api/session/qr");
+    const r = await fetch("/api/session/qr");
     if (r.ok) setQr(await r.blob()); else setMsg("Código indisponível. Tentando de novo.");
   } catch (e) { setMsg("Código indisponível. Tentando de novo."); }
 }
@@ -294,25 +245,11 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 async function start() {
   busy = true;
-  try { await api("/api/session/start", { method: "POST" }); await wait(4000); } catch (e) {}
+  try { await fetch("/api/session/start", { method: "POST" }); await wait(4000); } catch (e) {}
   busy = false;
   tick();
 }
 
-$("keyform").addEventListener("submit", e => {
-  e.preventDefault();
-  KEY = $("key").value.trim();
-  $("key").value = "";
-  $("keyerror").hidden = true;
-  try { localStorage.setItem("apikey", KEY); } catch (e) {}
-  tick();
-});
-$("setkey").addEventListener("click", () => {
-  KEY = "";
-  try { localStorage.removeItem("apikey"); } catch (e) {}
-  tick();
-  $("key").focus();
-});
 
 // Countdown in the footer, once a second.
 setInterval(() => {

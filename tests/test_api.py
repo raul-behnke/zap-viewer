@@ -32,44 +32,51 @@ def _post_hook(client: TestClient, body_obj: dict[str, Any], key: str) -> httpx.
 
 
 def test_health_needs_no_key() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         assert client.get("/health").status_code == 200
 
 
-def test_protected_route_rejects_missing_key() -> None:
-    with TestClient(app) as client:
-        assert client.get("/api/session/status").status_code == 401
+@pytest.mark.parametrize(
+    "base_url,headers",
+    [
+        ("http://localhost", {}),
+        ("http://127.0.0.1:8000", {}),
+        ("http://localhost:8000", {"Origin": "http://localhost:8000"}),
+    ],
+)
+def test_api_needs_no_key_locally(
+    monkeypatch: pytest.MonkeyPatch, base_url: str, headers: dict[str, str]
+) -> None:
+    async def status() -> dict[str, str]:
+        return {"status": "WORKING"}
+
+    monkeypatch.setattr(main_module.waha, "status", status)
+    with TestClient(app, base_url=base_url) as client:
+        r = client.get("/api/session/status", headers=headers)
+        assert r.status_code == 200
 
 
-def test_protected_route_rejects_wrong_key() -> None:
-    with TestClient(app) as client:
-        r = client.get(
-            "/api/session/status", headers={"X-API-Key": "nope"}
-        )
-        assert r.status_code == 401
-
-
-def test_protected_route_rejects_non_ascii_key_without_500() -> None:
-    """M9: hmac.compare_digest raises TypeError on a non-ASCII str, which
-    without encoding to bytes first turns a wrong key into a 500. httpx
-    itself refuses non-ASCII str header values, so send raw UTF-8 bytes —
-    ASGI decodes headers as latin-1, which still yields a non-ASCII str."""
-    with TestClient(app) as client:
-        r = client.get(
-            "/api/session/status",
-            headers={"X-API-Key": "café".encode()},
-        )
-        assert r.status_code == 401
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Host": "evil.example"},  # DNS rebinding
+        {"Origin": "https://evil.example"},  # cross-site request
+    ],
+)
+def test_api_rejects_non_local_requests(headers: dict[str, str]) -> None:
+    with TestClient(app, base_url="http://localhost:8000") as client:
+        r = client.get("/api/session/status", headers=headers)
+        assert r.status_code == 403
 
 
 def test_webhook_rejects_unsigned_request() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.post("/webhook/waha", json={"event": "message.any"})
         assert r.status_code == 401
 
 
 def test_webhook_rejects_bad_signature() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.post(
             "/webhook/waha",
             content=b'{"event":"message.any"}',
@@ -79,7 +86,7 @@ def test_webhook_rejects_bad_signature() -> None:
 
 
 def test_webhook_accepts_signed_request() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = _post_hook(
             client,
             {"event": "session.status", "payload": {"status": "WORKING"}},
@@ -89,7 +96,7 @@ def test_webhook_accepts_signed_request() -> None:
 
 
 def test_webhook_returns_200_on_broken_payload() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = _post_hook(
             client,
             {"event": "message.any", "payload": {"missing": "everything"}},
@@ -103,7 +110,7 @@ async def test_webhook_returns_200_on_malformed_json() -> None:
     sig = hmac_mod.new(
         settings.hook_hmac_key.encode(), body, hashlib.sha512
     ).hexdigest()
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.post(
             "/webhook/waha",
             content=body,
@@ -126,25 +133,10 @@ async def test_webhook_returns_200_on_malformed_json() -> None:
 
 
 def test_index_serves_html() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.get("/")
         assert r.status_code == 200
         assert "zap viewer" in r.text
-
-
-def test_events_rejects_wrong_query_key() -> None:
-    with TestClient(app) as client:
-        r = client.get("/api/events?x_api_key=nope")
-        assert r.status_code == 401
-
-
-async def test_lifespan_rejects_dev_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(main_module, "settings", replace(settings, api_key="dev"))
-    with pytest.raises(RuntimeError):
-        async with main_module.lifespan(main_module.app):
-            pass
 
 
 async def test_lifespan_rejects_dev_hook_hmac_key(
@@ -158,11 +150,11 @@ async def test_lifespan_rejects_dev_hook_hmac_key(
             pass
 
 
-async def test_events_accepts_correct_query_key() -> None:
+async def test_events_opens_stream() -> None:
     # Calling the route function directly (not through TestClient) avoids
     # opening a real SSE stream, which never closes on its own.
     before = set(main_module._subscribers)
-    response = await main_module.events(x_api_key=settings.api_key)
+    response = await main_module.events()
     main_module._subscribers.difference_update(
         main_module._subscribers - before
     )
@@ -170,22 +162,17 @@ async def test_events_accepts_correct_query_key() -> None:
 
 
 def test_pair_page_serves_html() -> None:
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.get("/pair")
         assert r.status_code == 200
         assert "Conectar WhatsApp" in r.text
-
-
-def test_session_stop_requires_key() -> None:
-    with TestClient(app) as client:
-        assert client.post("/api/session/stop").status_code == 401
 
 
 async def _client() -> httpx.AsyncClient:
     # ASGITransport, no lifespan: avoids starting the real backfill_loop
     # background task against a real WAHA instance for these tests.
     return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     )
 
 
@@ -201,7 +188,7 @@ async def test_backfill_start_then_status_reports_fields(
 ) -> None:
     monkeypatch.setattr(main_module, "waha", _EmptyWaha())
     monkeypatch.setattr(sync_module, "_current_pass", None)
-    headers = {"X-API-Key": settings.api_key}
+    headers: dict[str, str] = {}
 
     async with await _client() as client:
         r = await client.post("/api/backfill/start", headers=headers)
@@ -233,7 +220,7 @@ async def test_backfill_start_refuses_second_pass(
 
     monkeypatch.setattr(main_module, "waha", SlowWaha())
     monkeypatch.setattr(sync_module, "_current_pass", None)
-    headers = {"X-API-Key": settings.api_key}
+    headers: dict[str, str] = {}
 
     async with await _client() as client:
         r1 = await client.post("/api/backfill/start", headers=headers)

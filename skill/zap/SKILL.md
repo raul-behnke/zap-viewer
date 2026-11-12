@@ -18,7 +18,7 @@ Em cada novo bloco de shell:
 set -a; . ~/.config/zap/env; set +a
 ```
 
-Isso define `ZAP_URL`, `ZAP_API_KEY` e, se configurada, `OPENAI_API_KEY`.
+Isso define `ZAP_URL` e, se configurada, `OPENAI_API_KEY`.
 Nunca escreva chaves inline. Se o arquivo não existir, pare e indique o
 `INSTALL.md` do repositório; não procure credenciais em outros lugares. Se
 houver `connection refused`, informe que a stack pode estar parada e sugira

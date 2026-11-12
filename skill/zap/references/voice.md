@@ -64,7 +64,6 @@ regenerar depois da prévia:
 ```bash
 set -a; . ~/.config/zap/env; set +a
 curl -sS --fail-with-body --max-time 120 -X POST "$ZAP_URL/api/send/media" \
-  -H "X-API-Key: $ZAP_API_KEY" \
   --form-string "chat_id=$CHAT_ID" \
   --form-string "confirm_name=$CONFIRM_NAME" \
   -F "file=@${AUDIO_OGG};type=audio/ogg"

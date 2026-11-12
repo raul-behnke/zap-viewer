@@ -10,7 +10,7 @@ from app.main import app
 from app.sync import upsert_message
 from app.waha import WahaError
 
-HEADERS = {"X-API-Key": settings.api_key}
+HEADERS: dict[str, str] = {}
 
 BASE_TS = 1767225600  # matches tests/test_read.py's epoch anchor
 
@@ -45,7 +45,7 @@ async def seeded(pool: AsyncConnectionPool) -> AsyncConnectionPool:
 
 async def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
+        transport=httpx.ASGITransport(app=app), base_url="http://localhost"
     )
 
 
@@ -213,20 +213,3 @@ async def test_overview_reports_unreachable_when_waha_down(
         assert "backfill" in data
         assert "summaries" in data
         assert data["backfill"]["messages"] >= 2
-
-
-@pytest.mark.parametrize(
-    "method,url",
-    [
-        ("GET", "/api/summaries"),
-        ("GET", "/api/summaries/pending"),
-        ("PUT", "/api/summaries/5511999@c.us"),
-        ("GET", "/api/overview"),
-    ],
-)
-async def test_routes_require_api_key(
-    seeded: AsyncConnectionPool, method: str, url: str
-) -> None:
-    async with await _client() as client:
-        r = await client.request(method, url, json={})
-        assert r.status_code == 401
